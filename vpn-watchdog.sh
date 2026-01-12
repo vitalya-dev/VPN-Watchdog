@@ -3,8 +3,9 @@
 # ==========================================
 # Configuration
 # ==========================================
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
 # The exact name of your connection in NetworkManager
-VPN_NAME="antizapret-client-(vtikvn.servebeer.com)(1)"
+VPN_NAME="antizapret-client-(vtikvn.servebeer.com)"
 
 # The internal IP to ping to verify connectivity
 TARGET="10.29.0.1"
