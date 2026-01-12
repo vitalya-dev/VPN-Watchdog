@@ -31,11 +31,12 @@ fi
 # Main Logic
 # ==========================================
 
-# 1. Check if the VPN connection is currently active.
-# We interpret "Active" as currently connected in NetworkManager.
-# If it is NOT active, we assume the user stopped it manually and we exit.
-if ! "$NMCLI" connection show --active "$VPN_NAME" > /dev/null 2>&1; then
-    # VPN is not active. Doing nothing to avoid unwanted auto-connects.
+# Check if the VPN name exists in the list of active connections
+IS_ACTIVE=$("$NMCLI" -t -f NAME connection show --active | grep -x "$VPN_NAME")
+
+if [ -z "$IS_ACTIVE" ]; then
+    # The VPN is NOT in the active list. 
+    # This means the user turned it off or it's not supposed to be running.
     exit 0
 fi
 
