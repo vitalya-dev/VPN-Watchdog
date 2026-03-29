@@ -1,64 +1,58 @@
 #!/bin/bash
 
 # ==========================================
-# Configuration
+# Настройки
 # ==========================================
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
-# The exact name of your connection in NetworkManager
-VPN_NAME="antizapret-client-(vtikvn.servebeer.com)"
-
-# The internal IP to ping to verify connectivity
-TARGET="10.29.0.1"
-
-# Commands
+# Точное имя твоего VPN соединения в NetworkManager
+VPN_NAME="antizapret-client-(185.103.102.119)"
 NMCLI="/usr/bin/nmcli"
-LOCKFILE="/tmp/vpn-watchdog.lock"
 
 # ==========================================
-# Protection: Single Instance Check (Locking)
-# ==========================================
-# Open a file descriptor (200) to the lockfile
-exec 200>"$LOCKFILE"
-
-# Try to acquire an exclusive lock on the file.
-# '-n' means fail immediately if locked (don't wait).
-if ! flock -n 200; then
-    # Script is already running. Exit silently.
-    exit 1
-fi
-
-# ==========================================
-# Main Logic
+# Основная логика (Непрерывное чтение логов)
 # ==========================================
 
-# Check if the VPN name exists in the list of active connections
-IS_ACTIVE=$("$NMCLI" -t -f NAME connection show --active | grep -x "$VPN_NAME")
+echo "Запуск мониторинга логов VPN для '$VPN_NAME'..."
+logger -t vpn-watchdog "Запущен мониторинг логов nm-openvpn"
 
-if [ -z "$IS_ACTIVE" ]; then
-    # The VPN is NOT in the active list. 
-    # This means the user turned it off or it's not supposed to be running.
-    exit 0
-fi
+# Команда journalctl:
+# -t nm-openvpn : читаем логи только от процесса nm-openvpn
+# -f            : follow (читаем в реальном времени бесконечно)
+# -n 0          : не выводить старые логи при запуске, только новые
+journalctl -t nm-openvpn -f -n 0 | while read -r line; do
 
-# 2. Ping Local DNS/Target. If fail, restart connection.
-if ! ping -c 3 -W 5 "$TARGET" > /dev/null 2>&1; then
-    logger -t vpn-watchdog "Ping to $TARGET failed. Restarting VPN connection '$VPN_NAME'..."
+    # Проверяем, содержит ли новая строка лога одну из наших ошибок
+    if [[ "$line" == *"Inactivity timeout (--ping-restart)"* ]] || 
+       [[ "$line" == *"[ECONNREFUSED]"* ]] || 
+       [[ "$line" == *"No route to host"* ]]; then
+        
+        # Записываем в системный журнал, что мы поймали ошибку
+        logger -t vpn-watchdog "Поймано событие падения: $line"
+        logger -t vpn-watchdog "Инициирую перезапуск VPN '$VPN_NAME'..."
 
-    # Force the connection down first to ensure a clean state
-    "$NMCLI" connection down "$VPN_NAME"
-
-    # Wait a moment for the interface to clear
-    sleep 5
-
-    # Bring the connection back up
-    if "$NMCLI" connection up "$VPN_NAME"; then
-        logger -t vpn-watchdog "VPN '$VPN_NAME' restarted successfully."
-    else
-        logger -t vpn-watchdog "Failed to restart VPN '$VPN_NAME'."
+        # Проверяем, числится ли VPN как "активный" в NetworkManager
+        IS_ACTIVE=$("$NMCLI" -t -f NAME connection show --active | grep -x "$VPN_NAME")
+        
+        if [ -n "$IS_ACTIVE" ]; then
+            # Выключаем
+            "$NMCLI" connection down "$VPN_NAME"
+            
+            # Ждем пару секунд, чтобы интерфейсы успели удалиться из системы
+            sleep 3
+            
+            # Включаем обратно
+            if "$NMCLI" connection up "$VPN_NAME"; then
+                logger -t vpn-watchdog "VPN '$VPN_NAME' успешно перезапущен."
+            else
+                logger -t vpn-watchdog "Ошибка при попытке поднять VPN '$VPN_NAME'."
+            fi
+            
+            # Небольшая пауза после перезапуска, чтобы не реагировать 
+            # на старые логи, если они вдруг "долетят"
+            sleep 5
+        else
+            logger -t vpn-watchdog "VPN '$VPN_NAME' выключен пользователем, игнорирую событие."
+        fi
+        
     fi
-else
-    # Connection is good.
-    # Uncomment the line below for verbose logging
-    # logger -t vpn-watchdog "Ping to $TARGET successful. Connection OK."
-    :
-fi
+
+done
