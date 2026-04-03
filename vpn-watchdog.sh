@@ -4,7 +4,7 @@
 # Настройки
 # ==========================================
 # Точное имя твоего VPN соединения в NetworkManager
-VPN_NAME="antizapret-client-(fi-aeza-01.e-lenta.ru)"
+VPN_NAME="antizapret-client-(fi-aeza-01.e-lenta.ru)-udp"
 NMCLI="/usr/bin/nmcli"
 
 # ==========================================
