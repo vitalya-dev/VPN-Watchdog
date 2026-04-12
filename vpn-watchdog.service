@@ -1,0 +1,18 @@
+[Unit]
+Description=VPN Watchdog (NetworkManager OpenVPN)
+After=network.target
+
+[Service]
+# Полный путь до твоего скрипта!
+ExecStart=/home/vitalya/Projects/VPN-Watchdog/vpn-watchdog.sh
+
+# Автоматически перезапускать скрипт, если он вдруг упадет
+Restart=always
+RestartSec=10
+
+# Вывод скрипта (echo) будет лететь в системный журнал
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
